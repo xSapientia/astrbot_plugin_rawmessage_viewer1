@@ -1,0 +1,39 @@
+{
+  "enable_message_injection": {
+    "description": "是否启用消息注入功能",
+    "type": "bool",
+    "default": true,
+    "hint": "开启后会在每条消息前插入原生消息内容"
+  },
+  "use_image_render": {
+    "description": "是否使用图片渲染",
+    "type": "bool",
+    "default": true,
+    "hint": "开启后查看原生消息时会渲染为图片"
+  },
+  "delete_on_uninstall": {
+    "description": "卸载时删除数据",
+    "type": "bool",
+    "default": false,
+    "hint": "卸载插件时是否删除所有相关数据和配置文件"
+  },
+  "advanced_settings": {
+    "description": "高级设置",
+    "type": "object",
+    "items": {
+      "cache_size": {
+        "description": "消息缓存大小",
+        "type": "int",
+        "default": 100,
+        "hint": "缓存最近多少条增强消息"
+      },
+      "log_level": {
+        "description": "日志级别",
+        "type": "string",
+        "default": "info",
+        "options": ["debug", "info", "warning", "error"],
+        "hint": "设置插件的日志输出级别"
+      }
+    }
+  }
+}
