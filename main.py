@@ -1,6 +1,6 @@
 import json
 import asyncio
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger, AstrBotConfig
@@ -18,6 +18,8 @@ class RawMessageViewer(Star):
         super().__init__(context)
         self.config = config
         self.enhanced_messages: Dict[str, Any] = {}
+        self.processed_messages = set()  # 防止重复处理
+        self.tip_contents: Dict[str, str] = {}  # 存储tip内容
         logger.info("astrbot_plugin_rawmessage_viewer1 插件已加载")
 
     @filter.command("rawmessage", alias={"rawmsg"})
@@ -28,92 +30,121 @@ class RawMessageViewer(Star):
             return
 
         try:
-            raw_msg = event.message_obj.raw_message
-            formatted_msg = self._format_raw_message(raw_msg)
+            # 获取增强后的消息
+            message_id = event.message_obj.message_id
+
+            # 先检查是否有已保存的tip内容
+            if message_id in self.tip_contents:
+                tip_content = self.tip_contents[message_id]
+            elif message_id in self.enhanced_messages:
+                enhanced_msg = self.enhanced_messages[message_id]
+                tip_content = f"[aiocqhttp] RawMessage {enhanced_msg}"
+            else:
+                # 如果都没有，重新生成
+                enhanced_msg = await self._enhance_raw_message(event)
+                self.enhanced_messages[message_id] = enhanced_msg
+                tip_content = f"[aiocqhttp] RawMessage {enhanced_msg}"
+
+            # 格式化输出
+            formatted_output = f"<tip>\n{tip_content}\n</tip>"
 
             # 使用文字转图片功能，让消息更美观
             if self.config.get("use_image_render", True):
-                url = await self.text_to_image(formatted_msg)
+                url = await self.text_to_image(formatted_output)
                 yield event.image_result(url)
             else:
-                yield event.plain_result(formatted_msg)
+                yield event.plain_result(formatted_output)
 
         except Exception as e:
             logger.error(f"获取原生消息失败: {e}")
             yield event.plain_result(f"获取原生消息失败: {str(e)}")
 
-    @filter.on_decorating_result()
-    async def inject_raw_message(self, event: AstrMessageEvent):
-        """在消息前插入增强的原生消息内容"""
+    @filter.event_message_type(filter.EventMessageType.ALL, priority=100)  # 设置高优先级
+    async def process_incoming_message(self, event: AstrMessageEvent):
+        """处理所有传入的消息，在消息到达其他处理器之前"""
         if not self.config.get("enable_message_injection", True):
             return
 
         if event.get_platform_name() != "aiocqhttp":
             return
 
+        # 防止重复处理
+        message_id = event.message_obj.message_id
+        if message_id in self.processed_messages:
+            return
+        self.processed_messages.add(message_id)
+
         try:
             # 获取或创建增强消息
-            message_id = event.message_obj.message_id
-            if message_id in self.enhanced_messages:
-                enhanced_msg = self.enhanced_messages[message_id]
-            else:
+            if message_id not in self.enhanced_messages:
                 enhanced_msg = await self._enhance_raw_message(event)
                 self.enhanced_messages[message_id] = enhanced_msg
+            else:
+                enhanced_msg = self.enhanced_messages[message_id]
 
-            # 格式化增强消息
+            # 格式化增强消息为tip内容
             tip_content = f"[aiocqhttp] RawMessage {enhanced_msg}"
 
-            # 在消息链前插入tip内容
-            result = event.get_result()
+            # 保存tip内容供后续查看
+            self.tip_contents[message_id] = tip_content
+
+            # 保存原始消息内容的副本
+            original_message_str = event.message_obj.message_str
+            original_message_chain = list(event.message_obj.message)  # 创建副本
+
+            # 创建tip组件
             from astrbot.api.message_components import Plain
+            tip_component = Plain(f"<tip>\n{tip_content}\n</tip>\n")
 
-            # 创建新的消息链，在开头插入tip
-            new_chain = [
-                Plain(f"<tip>\n{tip_content}\n</tip>\n")
-            ]
-            new_chain.extend(result.chain)
-            result.chain = new_chain
+            # 创建新的消息链（不修改原始消息链）
+            new_message_chain = [tip_component] + original_message_chain
 
-            # 记录日志
-            logger.info(f"已插入增强原生消息: {tip_content}")
+            # 更新消息对象，但保持其他属性不变
+            event.message_obj.message = new_message_chain
+            event.message_obj.message_str = f"<tip>\n{tip_content}\n</tip>\n{original_message_str}"
 
-            # 清理旧的缓存（保留最近100条）
-            if len(self.enhanced_messages) > 100:
+            # 记录日志 - 显示AstrBot最终接收到的内容
+            logger.info(f"[RawMessageViewer] 成功在消息前插入增强内容")
+            logger.info(f"[RawMessageViewer] 原始消息: {original_message_str}")
+            logger.info(f"[RawMessageViewer] AstrBot最终接收到的消息: {event.message_obj.message_str}")
+
+            # 清理旧的缓存
+            cache_size = self.config.get("advanced_settings", {}).get("cache_size", 100)
+            if len(self.enhanced_messages) > cache_size:
                 keys = list(self.enhanced_messages.keys())
-                for key in keys[:50]:
+                for key in keys[:len(keys)//2]:
                     del self.enhanced_messages[key]
+                    self.processed_messages.discard(key)
+                    self.tip_contents.pop(key, None)
 
         except Exception as e:
-            logger.error(f"注入原生消息失败: {e}")
+            logger.error(f"处理传入消息失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
 
     async def _enhance_raw_message(self, event: AstrMessageEvent) -> Dict[str, Any]:
-        """增强原生消息，获取性别和群头衔信息"""
+        """增强原生消息，获取性别和群头衔信息，以及@对象信息"""
         try:
-            raw_msg = dict(event.message_obj.raw_message)
+            # 创建原生消息的深拷贝，避免修改原始数据
+            import copy
+
+            # 获取原始的raw_message
+            if hasattr(event.message_obj, 'raw_message') and isinstance(event.message_obj.raw_message, dict):
+                raw_msg = copy.deepcopy(event.message_obj.raw_message)
+            else:
+                # 如果raw_message不可用，返回一个基本结构
+                raw_msg = {
+                    "message_type": "unknown",
+                    "sender": {"user_id": 0, "nickname": "unknown"},
+                    "message": event.message_obj.message_str
+                }
 
             # 确保是aiocqhttp消息
             if event.get_platform_name() == "aiocqhttp":
-                # 尝试从不同的事件类型获取client
-                client = None
-
-                # 方法1：尝试从event获取bot属性
-                if hasattr(event, 'bot'):
-                    client = event.bot
-                # 方法2：尝试通过platform_manager获取
-                elif hasattr(event, 'message_obj') and hasattr(event.message_obj, 'platform'):
-                    platform = event.message_obj.platform
-                    if hasattr(platform, 'client'):
-                        client = platform.client
-                # 方法3：通过context获取platform
-                else:
-                    platforms = self.context.platform_manager.get_insts()
-                    for platform in platforms:
-                        if hasattr(platform, 'metadata') and platform.metadata.name == 'aiocqhttp':
-                            if hasattr(platform, 'client'):
-                                client = platform.client
-                                break
+                client = await self._get_aiocqhttp_client(event)
 
                 if client:
+                    # 增强发送者信息
                     sender = raw_msg.get("sender", {})
                     user_id = sender.get("user_id")
 
@@ -151,6 +182,13 @@ class RawMessageViewer(Star):
                     sender["sex"] = sex
                     sender["title"] = title
                     raw_msg["sender"] = sender
+
+                    # 处理@信息
+                    ater_info_list = await self._get_at_info_list(event, client, raw_msg)
+                    # 添加多个ater结构体
+                    for idx, ater_info in enumerate(ater_info_list, 1):
+                        raw_msg[f"ater{idx}"] = ater_info
+
                 else:
                     logger.warning("无法获取aiocqhttp客户端，跳过信息增强")
                     # 添加默认值
@@ -163,7 +201,100 @@ class RawMessageViewer(Star):
 
         except Exception as e:
             logger.error(f"增强原生消息失败: {e}")
-            return event.message_obj.raw_message
+            # 返回一个基本的结构，避免崩溃
+            return {
+                "message_type": "unknown",
+                "sender": {"user_id": 0, "nickname": "unknown", "sex": "unknown", "title": "unknown"},
+                "message": event.message_obj.message_str
+            }
+
+    async def _get_at_info_list(self, event: AstrMessageEvent, client: Any, raw_msg: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """获取消息中所有@对象的信息"""
+        ater_info_list = []
+
+        try:
+            # 检查消息链中是否有At类型的消息
+            message_chain = event.message_obj.message
+            at_users = []
+
+            # 从消息链中提取所有@的用户
+            from astrbot.api.message_components import At
+            for msg_comp in message_chain:
+                if isinstance(msg_comp, At):
+                    at_users.append(msg_comp.qq)
+
+            # 获取所有@用户的信息
+            for at_user_id in at_users:
+                ater_info = {
+                    "user_id": at_user_id,
+                    "nickname": "unknown",
+                    "card": "unknown",
+                    "role": "unknown",
+                    "sex": "unknown",
+                    "title": "unknown"
+                }
+
+                try:
+                    # 获取用户基本信息
+                    user_info = await client.api.get_stranger_info(user_id=at_user_id)
+                    ater_info["nickname"] = user_info.get("nickname", "unknown")
+                    ater_info["sex"] = user_info.get("sex", "unknown")
+
+                    # 如果是群消息，获取群相关信息
+                    if raw_msg.get("message_type") == "group" and raw_msg.get("group_id"):
+                        try:
+                            group_member_info = await client.api.get_group_member_info(
+                                group_id=raw_msg["group_id"],
+                                user_id=at_user_id
+                            )
+                            ater_info["card"] = group_member_info.get("card", "") or ater_info["nickname"]
+                            ater_info["role"] = group_member_info.get("role", "unknown")
+                            ater_info["title"] = group_member_info.get("title", "") or "unknown"
+                            # 群成员信息中的性别可能更准确
+                            if group_member_info.get("sex"):
+                                ater_info["sex"] = group_member_info["sex"]
+                        except Exception as e:
+                            logger.warning(f"获取@用户 {at_user_id} 群信息失败: {e}")
+
+                except Exception as e:
+                    logger.warning(f"获取@用户 {at_user_id} 信息失败: {e}")
+
+                ater_info_list.append(ater_info)
+
+        except Exception as e:
+            logger.error(f"处理@信息失败: {e}")
+
+        return ater_info_list
+
+    async def _get_aiocqhttp_client(self, event: AstrMessageEvent) -> Optional[Any]:
+        """获取aiocqhttp客户端"""
+        client = None
+
+        try:
+            # 方法1：从context获取platform_manager
+            if hasattr(self.context, 'platform_manager'):
+                platforms = self.context.platform_manager.get_insts()
+                for platform in platforms:
+                    if hasattr(platform, 'metadata') and platform.metadata.name == 'aiocqhttp':
+                        if hasattr(platform, 'client'):
+                            client = platform.client
+                            break
+
+            # 方法2：尝试从event获取
+            if not client and hasattr(event, 'bot'):
+                client = event.bot
+
+            # 方法3：尝试从message_obj获取
+            if not client and hasattr(event, 'message_obj'):
+                if hasattr(event.message_obj, 'platform'):
+                    platform = event.message_obj.platform
+                    if hasattr(platform, 'client'):
+                        client = platform.client
+
+        except Exception as e:
+            logger.error(f"获取aiocqhttp客户端时出错: {e}")
+
+        return client
 
     def _format_raw_message(self, raw_msg: Any) -> str:
         """格式化原生消息为可读字符串"""
@@ -179,6 +310,8 @@ class RawMessageViewer(Star):
     async def terminate(self):
         """插件卸载时的清理工作"""
         self.enhanced_messages.clear()
+        self.processed_messages.clear()
+        self.tip_contents.clear()
 
         # 根据配置决定是否删除文件
         if self.config.get("delete_on_uninstall", False):
