@@ -8,18 +8,18 @@ from astrbot.api.platform import AiocqhttpAdapter
 
 
 @register(
-    "astrbot_plugin_rawmessage_viewer",
+    "astrbot_plugin_rawmessage_viewer1",
     "xSapientia",
     "查看和增强aiocqhttp原生消息的插件",
     "0.0.1",
-    "https://github.com/xSapientia/astrbot_plugin_rawmessage_viewer"
+    "https://github.com/xSapientia/astrbot_plugin_rawmessage_viewer1"
 )
 class RawMessageViewer(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
         self.config = config
         self.enhanced_messages: Dict[str, Any] = {}
-        logger.info("astrbot_plugin_rawmessage_viewer 插件已加载")
+        logger.info("astrbot_plugin_rawmessage_viewer1 插件已加载")
 
     @filter.command("rawmessage", alias={"rawmsg"})
     async def show_raw_message(self, event: AstrMessageEvent):
@@ -168,4 +168,4 @@ class RawMessageViewer(Star):
                 os.remove(config_file)
                 logger.info(f"已删除配置文件: {config_file}")
 
-        logger.info("astrbot_plugin_rawmessage_viewer 插件已卸载")
+        logger.info("astrbot_plugin_rawmessage_viewer1 插件已卸载")
