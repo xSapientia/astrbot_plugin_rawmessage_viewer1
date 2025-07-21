@@ -4,7 +4,6 @@ from typing import Optional, Dict, Any
 from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger, AstrBotConfig
-from astrbot.api.platform import AiocqhttpAdapter
 
 
 @register(
@@ -90,37 +89,60 @@ class RawMessageViewer(Star):
     async def _enhance_raw_message(self, event: AstrMessageEvent) -> Dict[str, Any]:
         """增强原生消息，获取性别和群头衔信息"""
         try:
-            raw_msg = event.message_obj.raw_message
-            enhanced_msg = dict(raw_msg)
+            raw_msg = dict(event.message_obj.raw_message)
 
             # 确保是aiocqhttp消息
             if event.get_platform_name() == "aiocqhttp":
-                from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import AiocqhttpMessageEvent
-                if isinstance(event, AiocqhttpMessageEvent):
+                # 尝试从不同的事件类型获取client
+                client = None
+
+                # 方法1：尝试从event获取bot属性
+                if hasattr(event, 'bot'):
                     client = event.bot
-                    sender = enhanced_msg.get("sender", {})
+                # 方法2：尝试通过platform_manager获取
+                elif hasattr(event, 'message_obj') and hasattr(event.message_obj, 'platform'):
+                    platform = event.message_obj.platform
+                    if hasattr(platform, 'client'):
+                        client = platform.client
+                # 方法3：通过context获取platform
+                else:
+                    platforms = self.context.platform_manager.get_insts()
+                    for platform in platforms:
+                        if hasattr(platform, 'metadata') and platform.metadata.name == 'aiocqhttp':
+                            if hasattr(platform, 'client'):
+                                client = platform.client
+                                break
+
+                if client:
+                    sender = raw_msg.get("sender", {})
                     user_id = sender.get("user_id")
 
-                    # 获取性别信息
+                    # 初始化默认值
                     sex = "unknown"
                     title = "unknown"
 
                     try:
                         # 尝试获取用户信息
-                        if user_id:
-                            user_info = await client.api.get_stranger_info(user_id=user_id)
-                            sex = user_info.get("sex", "unknown")
+                        if user_id and hasattr(client, 'api'):
+                            try:
+                                user_info = await client.api.get_stranger_info(user_id=user_id)
+                                sex = user_info.get("sex", "unknown")
+                            except:
+                                pass
 
-                        # 如果是群消息，尝试获取群头衔
-                        if enhanced_msg.get("message_type") == "group" and enhanced_msg.get("group_id"):
-                            group_member_info = await client.api.get_group_member_info(
-                                group_id=enhanced_msg["group_id"],
-                                user_id=user_id
-                            )
-                            title = group_member_info.get("title", "") or "unknown"
-                            # 如果通过群成员信息也能获取性别，优先使用
-                            if group_member_info.get("sex"):
-                                sex = group_member_info["sex"]
+                            # 如果是群消息，尝试获取群头衔
+                            if raw_msg.get("message_type") == "group" and raw_msg.get("group_id"):
+                                try:
+                                    group_member_info = await client.api.get_group_member_info(
+                                        group_id=raw_msg["group_id"],
+                                        user_id=user_id
+                                    )
+                                    title = group_member_info.get("title", "") or "unknown"
+                                    # 如果通过群成员信息也能获取性别，优先使用
+                                    if group_member_info.get("sex"):
+                                        sex = group_member_info["sex"]
+                                except:
+                                    pass
 
                     except Exception as e:
                         logger.warning(f"获取用户额外信息失败: {e}")
@@ -128,9 +150,16 @@ class RawMessageViewer(Star):
                     # 更新sender信息
                     sender["sex"] = sex
                     sender["title"] = title
-                    enhanced_msg["sender"] = sender
+                    raw_msg["sender"] = sender
+                else:
+                    logger.warning("无法获取aiocqhttp客户端，跳过信息增强")
+                    # 添加默认值
+                    sender = raw_msg.get("sender", {})
+                    sender["sex"] = "unknown"
+                    sender["title"] = "unknown"
+                    raw_msg["sender"] = sender
 
-            return enhanced_msg
+            return raw_msg
 
         except Exception as e:
             logger.error(f"增强原生消息失败: {e}")
