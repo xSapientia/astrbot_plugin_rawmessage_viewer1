@@ -1,5 +1,5 @@
-name: astrbot_plugin_rawmessage_viewer
+name: astrbot_plugin_rawmessage_viewer1
 desc: "查看和增强aiocqhttp原生消息的插件，支持获取性别和群头衔信息"
-version: 0.0.1
+version: v0.0.1
 author: xSapientia
-repo: https://github.com/xSapientia/astrbot_plugin_rawmessage_viewer
+repo: https://github.com/xSapientia/astrbot_plugin_rawmessage_viewer1
