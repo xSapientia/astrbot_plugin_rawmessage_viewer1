@@ -1,39 +1,118 @@
 {
-  "enable_message_injection": {
-    "description": "是否启用消息注入功能",
+  "enable_plugin": {
+    "description": "插件总开关",
+    "type": "bool",
+    "default": true
+  },
+"max_fortune": {
+    "description": "人品值上限",
+    "type": "int",
+    "default": 100
+  },
+  "min_fortune": {
+    "description": "人品值下限",
+    "type": "int",
+    "default": 0
+  },
+
+  "fortune_algorithm": {
+    "description": "人品值生成算法",
+    "type": "string",
+    "default": "random",
+    "options": ["random", "weighted"],
+    "hint": "random:纯随机; weighted:正态分布加权"
+  },
+  "cache_days": {
+    "description": "结果缓存天数",
+    "type": "int",
+    "default": 7,
+    "hint": "缓存多少天的占卜结果"
+  },
+  "history_days": {
+    "description": "历史记录天数",
+    "type": "int",
+    "default": 30,
+    "hint": "保留多少天的历史记录"
+  },
+  "show_cached_result": {
+    "description": "查询时显示缓存结果",
     "type": "bool",
     "default": true,
-    "hint": "开启后会在每条消息前插入原生消息内容"
+    "hint": "第二次查询时是否显示之前的占卜过程"
   },
-  "use_image_render": {
-    "description": "是否使用图片渲染",
-    "type": "bool",
-    "default": true,
-    "hint": "开启后查看原生消息时会渲染为图片"
+  "detecting_message": {
+    "description": "检测中提示消息",
+    "type": "string",
+    "default": "神秘的能量汇聚，{nickname}，你的命运即将显现，正在祈祷中..."
   },
-  "delete_on_uninstall": {
-    "description": "卸载时删除数据",
-    "type": "bool",
-    "default": false,
-    "hint": "卸载插件时是否删除所有相关数据和配置文件"
+  "process_prompt": {
+    "description": "过程模拟提示词",
+    "type": "text",
+    "default": "使用{nickname}的简称称呼，模拟你使用水晶球缓慢复现今日结果的过程，50字以内"
   },
-  "advanced_settings": {
-    "description": "高级设置",
-    "type": "object",
-    "items": {
-      "cache_size": {
-        "description": "消息缓存大小",
-        "type": "int",
-        "default": 100,
-        "hint": "缓存最近多少条增强消息"
-      },
-      "log_level": {
-        "description": "日志级别",
-        "type": "string",
-        "default": "info",
-        "options": ["debug", "info", "warning", "error"],
-        "hint": "设置插件的日志输出级别"
-      }
-    }
+  "advice_prompt": {
+    "description": "评语建议提示词",
+    "type": "text",
+    "default": "使用{nickname}的简称称呼，对{nickname}的今日人品值{jrrp}给出你的评语和建议，50字以内"
+  },
+  "result_template": {
+    "description": "占卜结果模板",
+    "type": "text",
+    "default": "🔮 {process}\n💎 人品值：{jrrp}\n✨ 运势：{fortune}\n💬 建议：{advice}",
+    "hint": "支持变量: {process} {jrrp} {fortune} {advice}"
+  },
+  "query_template": {
+    "description": "查询结果模板",
+    "type": "text",
+    "default": "📌 今日人品\n{nickname}，今天已经查询过了哦~\n今日人品值: {jrrp}\n运势: {fortune} {femoji}",
+    "hint": "支持变量: {nickname} {jrrp} {fortune} {femoji}"
+  },
+  "history_template": {
+    "description": "历史记录模板",
+    "type": "text",
+    "default": "📚 {nickname} 的人品历史记录\n{records}\n\n📊 统计信息:\n平均人品值: {avgjrrp}\n最高人品值: {maxjrrp}\n最低人品值: {minjrrp}",
+    "hint": "支持变量: {nickname} {records} {avgjrrp} {maxjrrp} {minjrrp}"
+  },
+  "rank_template": {
+    "description": "排行榜模板",
+    "type": "text",
+    "default": "📊【今日人品排行榜】{date}\n━━━━━━━━━━━━━━━\n{ranks}",
+    "hint": "支持变量: {date} {ranks}"
+  },
+  "rank_item_template": {
+    "description": "排行项模板",
+    "type": "text",
+    "default": "{medal} {nickname}: {jrrp} ({fortune})",
+    "hint": "支持变量: {medal} {nickname} {jrrp} {fortune}"
+  },
+  "llm_provider_id": {
+    "description": "LLM提供商ID",
+    "type": "string",
+    "default": "",
+    "hint": "留空使用AstrBot默认提供商"
+  },
+  "llm_api_key": {
+    "description": "自定义LLM API Key",
+    "type": "string",
+    "default": "",
+    "hint": "仅在未指定provider_id时使用"
+  },
+  "llm_api_url": {
+    "description": "自定义LLM API URL",
+    "type": "string",
+    "default": "",
+    "hint": "支持OpenAI兼容接口"
+  },
+  "llm_model": {
+    "description": "自定义LLM模型",
+    "type": "string",
+    "default": "",
+    "hint": "如: gpt-3.5-turbo"
+  },
+  "persona_name": {
+    "description": "占卜师人格名称",
+    "type": "string",
+    "default": "",
+    "hint": "留空使用AstrBot默认人格"
   }
 }
