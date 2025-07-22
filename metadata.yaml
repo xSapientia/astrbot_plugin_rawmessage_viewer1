@@ -1,5 +1,5 @@
-name: astrbot_plugin_rawmessage_viewer1
-desc: "查看和增强aiocqhttp原生消息的插件，支持获取性别和群头衔信息"
+name: astrbot_plugin_daily_fortune1
+desc: 今日人品测试插件增强版，支持自定义模板和增强用户信息
 version: v0.0.1
 author: xSapientia
-repo: https://github.com/xSapientia/astrbot_plugin_rawmessage_viewer1
+repo: https://github.com/xSapientia/astrbot_plugin_daily_fortune1
